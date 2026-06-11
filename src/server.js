@@ -352,7 +352,7 @@ app.use("*", (req, res) => {
  * START SERVER
  * =========================
  */
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 7860;
 
 const server = app.listen(PORT, () => {
     console.log(`\n🚀 DORIQ Server running on port ${PORT}`);
