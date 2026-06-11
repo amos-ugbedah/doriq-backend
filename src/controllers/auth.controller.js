@@ -8,14 +8,21 @@ let brevoApi = null;
 const SENDER_EMAIL = process.env.EMAIL_FROM || "ugbedahamos@gmail.com";
 const SENDER_NAME = process.env.EMAIL_FROM_NAME || "Doriq";
 
-try {
-    const defaultClient = SibApiV3Sdk.ApiClient.instance;
-    const apiKey = defaultClient.authentications["api-key"];
-    apiKey.apiKey = process.env.BREVO_API_KEY;
-    brevoApi = new SibApiV3Sdk.TransactionalEmailsApi();
-    console.log("✅ Brevo email client initialized");
-} catch (error) {
-    console.error("❌ Brevo initialization error:", error.message);
+// Check if Brevo API key is available
+const BREVO_API_KEY = process.env.BREVO_API_KEY || process.env.VITE_BREVO_API_KEY;
+
+if (BREVO_API_KEY && BREVO_API_KEY !== "undefined") {
+    try {
+        const defaultClient = SibApiV3Sdk.ApiClient.instance;
+        const apiKey = defaultClient.authentications["api-key"];
+        apiKey.apiKey = BREVO_API_KEY;
+        brevoApi = new SibApiV3Sdk.TransactionalEmailsApi();
+        console.log("✅ Brevo email client initialized");
+    } catch (error) {
+        console.error("❌ Brevo initialization error:", error.message);
+    }
+} else {
+    console.log("⚠️ BREVO_API_KEY not set, emails will be logged to console only");
 }
 
 // Helper functions
@@ -92,6 +99,35 @@ exports.checkEmail = async (req, res) => {
 };
 
 /* =========================
+   CHECK IF EMAIL IS BANNED
+========================= */
+exports.checkEmailBanned = async (req, res) => {
+    try {
+        const { email } = req.params;
+        const bannedDoc = await db.collection("banned_emails").doc(email.toLowerCase()).get();
+        
+        if (bannedDoc.exists) {
+            const data = bannedDoc.data();
+            if (data.banExpiresAt && data.banExpiresAt.toDate() < new Date()) {
+                await db.collection("banned_emails").doc(email).delete();
+                return res.json({ banned: false });
+            }
+            return res.json({ 
+                banned: true, 
+                reason: data.reason,
+                bannedAt: data.bannedAt?.toDate(),
+                banExpiresAt: data.banExpiresAt?.toDate()
+            });
+        }
+        
+        res.json({ banned: false });
+    } catch (error) {
+        console.error("Check email banned error:", error);
+        res.json({ banned: false });
+    }
+};
+
+/* =========================
    SEND VERIFICATION CODE
 ========================= */
 exports.sendVerificationCode = async (req, res) => {
@@ -114,6 +150,7 @@ exports.sendVerificationCode = async (req, res) => {
 
         console.log(`🔑 Verification code for ${targetEmail}: ${verificationCode}`);
 
+        // Send email if Brevo is initialized
         if (brevoApi) {
             try {
                 let sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
@@ -121,24 +158,32 @@ exports.sendVerificationCode = async (req, res) => {
                 sendSmtpEmail.to = [{ email: targetEmail, name: userName || "User" }];
                 sendSmtpEmail.htmlContent = `
                     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                        <h1 style="color: #3b82f6;">Verify Your DORIQ Account</h1>
-                        <p>Hello ${userName || "User"},</p>
-                        <p>Your verification code is:</p>
-                        <div style="background: #1e293b; color: white; font-size: 32px; padding: 20px; text-align: center; border-radius: 12px; letter-spacing: 5px;">
-                            <strong>${verificationCode}</strong>
+                        <div style="text-align: center; padding: 20px 0;">
+                            <div style="display: inline-block; width: 60px; height: 60px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); border-radius: 16px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px;">
+                                <span style="font-size: 32px;">💰</span>
+                            </div>
                         </div>
-                        <p>This code will expire in <strong>15 minutes</strong>.</p>
-                        <p>If you didn't request this, please ignore this email.</p>
-                        <hr>
-                        <p style="color: #666; font-size: 12px;">© 2026 DORIQ - Global Financial Services</p>
+                        <h1 style="color: #3b82f6; text-align: center; margin-bottom: 24px;">Verify Your DORIQ Account</h1>
+                        <p style="color: #e5e7eb; font-size: 16px; margin-bottom: 24px;">Hello ${userName || "User"},</p>
+                        <p style="color: #9ca3af; margin-bottom: 16px;">Thank you for choosing DORIQ. Please use the verification code below to complete your registration:</p>
+                        <div style="background: #1e293b; padding: 24px; text-align: center; border-radius: 16px; margin: 24px 0;">
+                            <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #60a5fa; font-family: monospace;">${verificationCode}</span>
+                        </div>
+                        <p style="color: #9ca3af; font-size: 14px; margin-bottom: 8px;">This code will expire in <strong>15 minutes</strong>.</p>
+                        <p style="color: #6b7280; font-size: 12px;">If you didn't request this, please ignore this email.</p>
+                        <hr style="border-color: #1e293b; margin: 24px 0;">
+                        <p style="color: #4b5563; font-size: 10px; text-align: center;">© 2026 DORIQ - Global Financial Services</p>
                     </div>
                 `;
                 sendSmtpEmail.sender = { email: SENDER_EMAIL, name: SENDER_NAME };
                 await brevoApi.sendTransacEmail(sendSmtpEmail);
                 console.log(`✅ Email sent to ${targetEmail}`);
             } catch (emailError) {
-                console.error("Email error:", emailError.message);
+                console.error("❌ Email error:", emailError.response?.body?.message || emailError.message);
+                // Don't fail the request if email fails - code is still logged
             }
+        } else {
+            console.log(`⚠️ Brevo not configured - verification code for ${targetEmail}: ${verificationCode}`);
         }
 
         res.json({
@@ -243,6 +288,21 @@ exports.resendVerificationCode = async (req, res) => {
             createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
         console.log(`🔑 New code for ${targetEmail}: ${verificationCode}`);
+        
+        if (brevoApi) {
+            try {
+                let sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+                sendSmtpEmail.subject = "Your New DORIQ Verification Code";
+                sendSmtpEmail.to = [{ email: targetEmail, name: userName || "User" }];
+                sendSmtpEmail.htmlContent = `<h1>Your new verification code is: <strong>${verificationCode}</strong></h1><p>Expires in 15 minutes.</p>`;
+                sendSmtpEmail.sender = { email: SENDER_EMAIL, name: SENDER_NAME };
+                await brevoApi.sendTransacEmail(sendSmtpEmail);
+                console.log(`✅ Resend email sent to ${targetEmail}`);
+            } catch (emailError) {
+                console.error("Resend email error:", emailError.message);
+            }
+        }
+        
         res.json({
             success: true,
             message: "New code sent",
