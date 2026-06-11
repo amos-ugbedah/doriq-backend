@@ -1,0 +1,87 @@
+# ==========================
+# ENVIRONMENT FILES
+# ==========================
+.env
+,env.production 
+.env.*
+!.env.production
+!.env.staging
+
+# ==========================
+# FIREBASE SECRETS
+# ==========================
+serviceAccountKey.json
+firebase-adminsdk*.json
+*serviceAccount*.json
+
+# ==========================
+# NODE MODULES
+# ==========================
+node_modules/
+
+# ==========================
+# BUILD OUTPUTS
+# ==========================
+dist/
+build/
+coverage/
+
+# ==========================
+# LOGS
+# ==========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ==========================
+# UPLOADS
+# ==========================
+uploads/
+temp/
+tmp/
+
+# ==========================
+# OS FILES
+# ==========================
+.DS_Store
+Thumbs.db
+
+# ==========================
+# IDE FILES
+# ==========================
+.vscode/
+.idea/
+
+# ==========================
+# CACHE
+# ==========================
+.cache/
+.parcel-cache/
+.eslintcache
+
+# ==========================
+# TEST FILES
+# ==========================
+.nyc_output/
+
+# ==========================
+# DATABASE FILES
+# ==========================
+*.sqlite
+*.db
+
+# ==========================
+# CERTIFICATES & KEYS
+# ==========================
+*.pem
+*.key
+*.crt
+*.p12
+
+# ==========================
+# LOCAL CONFIGS
+# ==========================
+config.local.js
+config.local.json
